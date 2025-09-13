@@ -16,6 +16,7 @@ struct Level: Identifiable {
 
 struct MainMenuView: View {
     @State private var showSettings = false
+    @State private var showTutorial = false
     @State private var levels: [Level] = []
     
     init() {
@@ -85,10 +86,10 @@ struct MainMenuView: View {
                         GridItem(.flexible())
                     ], spacing: 15) {
                         ForEach(levels) { level in
-                            LevelButton(level: level) {
+                            LevelButton(level: level, action: {
                                 // Действие при выборе уровня
                                 print("Выбран уровень \(level.number)")
-                            }
+                            }, showTutorial: $showTutorial)
                         }
                     }
                     .padding(.horizontal, 20)
@@ -141,7 +142,7 @@ struct CustomSlider: View {
                 Image("fillSlider_image")
                     .resizable()
                     .aspectRatio(contentMode: .fill)
-                    .frame(height: 12)
+                    .frame(height: 13)
                     .mask(
                         Rectangle()
                             .frame(width: geometry.size.width * CGFloat((value - range.lowerBound) / (range.upperBound - range.lowerBound)), height: 12)
@@ -246,31 +247,44 @@ struct SettingsAlert: View {
 struct LevelButton: View {
     let level: Level
     let action: () -> Void
+    @Binding var showTutorial: Bool
     
     var body: some View {
-        Button(action: action) {
-            ZStack {
-                // Фон уровня
-                Image("lvl_bg")
-                    .resizable()
-                    .aspectRatio(contentMode: .fill)
-                    .frame(width: 70, height: 100)
-                   // .cornerRadius(15)
-                
-                VStack(spacing: 8) {
-                    // Номер уровня
-                    Text("\(level.number)")
-                        .font(.title2)
-                        .fontWeight(.bold)
-                        .foregroundColor(.white)
-                        .shadow(radius: 2)
-                    
-                    // Звёзды (одна картинка)
-                    Image(starImageName(for: level.stars))
-                        .resizable()
-                        .aspectRatio(contentMode: .fit)
-                        .frame(width: 200, height: 30)
+        Group {
+            if level.number == 1 {
+                NavigationLink(destination: TutorialView()) {
+                    levelContent
                 }
+            } else {
+                Button(action: action) {
+                    levelContent
+                }
+            }
+        }
+    }
+    
+    private var levelContent: some View {
+        ZStack {
+            // Фон уровня
+            Image("lvl_bg")
+                .resizable()
+                .aspectRatio(contentMode: .fill)
+                .frame(width: 70, height: 100)
+               // .cornerRadius(15)
+            
+            VStack(spacing: 8) {
+                // Номер уровня
+                Text("\(level.number)")
+                    .font(.title2)
+                    .fontWeight(.bold)
+                    .foregroundColor(.white)
+                    .shadow(radius: 2)
+                
+                // Звёзды (одна картинка)
+                Image(starImageName(for: level.stars))
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: 200, height: 30)
             }
         }
         .buttonStyle(PlainButtonStyle())
