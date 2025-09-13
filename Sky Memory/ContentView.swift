@@ -97,18 +97,7 @@ struct GameSceneView: View {
                     
                     Spacer()
                     
-                    // Система здоровья по центру
-                    HStack(spacing: 8) {
-                        ForEach(0..<3) { index in
-                            Image(index < health ? "fillHeart_icon" : "notFill_icon")
-                                .resizable()
-                                .aspectRatio(contentMode: .fit)
-                                .frame(width: 30, height: 30)
-                        }
-                    }
-                    .padding(.top, 8)
-                    
-                    Spacer()
+                
                     
                     // Пустое место справа для баланса
                     Spacer()
