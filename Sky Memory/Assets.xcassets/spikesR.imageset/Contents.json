@@ -1,17 +1,17 @@
 {
   "images" : [
     {
-      "filename" : "game (1).png",
+      "filename" : "spikes r.png",
       "idiom" : "universal",
       "scale" : "1x"
     },
     {
-      "filename" : "game (1) 1.png",
+      "filename" : "spikes r 1.png",
       "idiom" : "universal",
       "scale" : "2x"
     },
     {
-      "filename" : "game (1) 2.png",
+      "filename" : "spikes r 2.png",
       "idiom" : "universal",
       "scale" : "3x"
     }

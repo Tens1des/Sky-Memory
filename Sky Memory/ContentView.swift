@@ -26,13 +26,19 @@ struct SKViewRepresentable: UIViewRepresentable {
 struct ContentView: View {
     @State private var gameScene: GameScene?
     @State private var showGameScene = false
+    @State private var selectedLevel: Int = 0
+    @State private var notificationObserver: NSObjectProtocol?
     
     var body: some View {
         NavigationView {
             if showGameScene {
                 // Игровая сцена
                 if let scene = gameScene {
-                    GameSceneView(scene: scene)
+                    GameSceneView(scene: scene, onHome: {
+                        // Возвращаемся на главный экран без автозапуска туториала/уровня
+                        showGameScene = false
+                        gameScene = nil
+                    })
                 } else {
                     // Показываем загрузочный индикатор, пока сцена не готова
                     ProgressView()
@@ -41,23 +47,55 @@ struct ContentView: View {
             } else {
                 // Главное меню
                 MainMenuView()
+                    .toolbar {
+                        ToolbarItem(placement: .navigationBarTrailing) {
+                            Menu {
+                                Button("Уровень 1") {
+                                    startGame(level: 0)
+                                }
+                                Button("Уровень 2") {
+                                    startGame(level: 1)
+                                }
+                            } label: {
+                                Text("Выбрать уровень")
+                                    .foregroundColor(.white)
+                                    .padding(8)
+                                    .background(Color.blue)
+                                    .cornerRadius(8)
+                            }
+                        }
+                    }
             }
         }
         .navigationViewStyle(StackNavigationViewStyle())
         .onAppear {
-            // Инициализируем сцену при появлении представления
-            if gameScene == nil {
-                let scene = GameScene()
-                scene.scaleMode = .aspectFill
-                gameScene = scene
+            // Единая подписка для открытия главного меню
+            notificationObserver = NotificationCenter.default.addObserver(forName: Notification.Name("OpenMainMenu"), object: nil, queue: .main) { _ in
+                showGameScene = false
+                gameScene = nil
             }
         }
+        .onDisappear {
+            if let observer = notificationObserver {
+                NotificationCenter.default.removeObserver(observer)
+                notificationObserver = nil
+            }
+        }
+    }
+    
+    private func startGame(level: Int) {
+      //  let scene = GameScene(size: UIScreen.main.bounds.size, level: level)
+        //scene.scaleMode = .aspectFill
+      // gameScene = scene
+        selectedLevel = level
     }
 }
 
 // Отдельное представление для игровой сцены и интерфейса
 struct GameSceneView: View {
     @ObservedObject var scene: GameScene
+    let onHome: () -> Void
+    @ObservedObject private var playerData = PlayerData.shared
     @State private var health: Int = 3 // Максимальное здоровье
     @State private var showPauseAlert = false
     
@@ -75,6 +113,7 @@ struct GameSceneView: View {
                         // Кнопка паузы
                         Button(action: {
                             showPauseAlert = true
+                            scene.pauseGame()
                         }) {
                             Image("pause_button")
                                 .resizable()
@@ -92,25 +131,54 @@ struct GameSceneView: View {
                                 .frame(width: 44, height: 44)
                         }
                     }
-                    .padding(.leading, 16)
+                    .padding(.leading, 18)
                     .padding(.top, 8)
                     
-                    Spacer()
+                    Spacer().frame(width: 15)
                     
-                
+                    // Индикаторы жизней по центру
+                    HStack(spacing: 8) {
+                        ForEach(0..<3) { index in
+                            Image(index < scene.lives ? "fillHeart_icon" : "notFill_icon")
+                                .resizable()
+                                .aspectRatio(contentMode: .fit)
+                                .frame(width: 30, height: 30)
+                        }
+                    }
                     
-                    // Пустое место справа для баланса
-                    Spacer()
-                        .frame(width: 44)
-                        .padding(.trailing, 16)
+                    // Звезды и монеты за уровень справа (счетчик под звездами)
+                    VStack(alignment: .trailing, spacing: 4) {
+                        HStack(spacing: 8) {
+                            ForEach(0..<3) { index in
+                                Image(index < scene.stars ? "fillStar_icon" : "notFillStar_icon")
+                                    .resizable()
+                                    .aspectRatio(contentMode: .fit)
+                                    .frame(width: 30, height: 30)
+                            }
+                        }
+                        LevelCoinCounterView(scene: scene)
+                    }
+                    .padding(.trailing, 16)
                 }
                 
                 Spacer()
             }
             
+            // Алерт победы/поражения
+            if scene.gameOver {
+                GameOverOverlay(didWin: scene.didWin,
+                                 stars: scene.stars,
+                                 rewardCoins: scene.didWin ? scene.levelCoins : 0,
+                                 onRestart: { scene.restartGame() },
+                                 onHome: {
+                                     NotificationCenter.default.post(name: Notification.Name("OpenMainMenu"), object: nil)
+                                 })
+            }
+            
             // Алерт паузы
             if showPauseAlert {
                 PauseAlert(isPresented: $showPauseAlert)
+                    .environmentObject(scene)
             }
         }
         .navigationBarHidden(true)
@@ -123,6 +191,7 @@ struct PauseAlert: View {
     @State private var musicVolume: Double = 0.5
     @State private var soundVolume: Double = 0.7
     @State private var showMainMenu = false
+    @EnvironmentObject var scene: GameScene
     
     var body: some View {
         ZStack {
@@ -171,7 +240,9 @@ struct PauseAlert: View {
                     // Кнопка домой
                     Button(action: {
                         print("Home button tapped")
-                        showMainMenu = true
+                        isPresented = false
+                        scene.resumeGame()
+                        NotificationCenter.default.post(name: Notification.Name("OpenMainMenu"), object: nil)
                     }) {
                         Image("home_button")
                             .resizable()
@@ -183,6 +254,7 @@ struct PauseAlert: View {
                     Button(action: {
                         print("Restart button tapped")
                         isPresented = false
+                        scene.restartGame()
                     }) {
                         Image("restart_button")
                             .resizable()
@@ -194,6 +266,7 @@ struct PauseAlert: View {
                     Button(action: {
                         print("Continue button tapped")
                         isPresented = false
+                        scene.resumeGame()
                     }) {
                         Image("countine_button")
                             .resizable()
@@ -210,12 +283,109 @@ struct PauseAlert: View {
             )
             .frame(width: 350, height: 280)
             
-            // Навигация к главному меню
-            if showMainMenu {
-                NavigationLink(destination: MainMenuView(), isActive: $showMainMenu) {
-                    EmptyView()
+            // Навигация перенесена через onHome
+        }
+    }
+}
+
+//# MARK: - Game Over Overlay
+struct GameOverOverlay: View {
+    let didWin: Bool
+    let stars: Int
+    let rewardCoins: Int
+    let onRestart: () -> Void
+    let onHome: () -> Void
+    
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.6)
+                .ignoresSafeArea()
+            
+            VStack(spacing: 16) {
+                Text(didWin ? "YOU WIN!" : "YOU LOSE!")
+                    .font(.system(size: 32, weight: .bold))
+                    .foregroundColor(.white)
+                    .padding(.top, 8)
+                
+                // Звезды
+                HStack(spacing: 12) {
+                    ForEach(0..<3) { index in
+                        Image(index < stars ? "fillStar_icon" : "notFillStar_icon")
+                            .resizable()
+                            .aspectRatio(contentMode: .fit)
+                            .frame(width: 40, height: 40)
+                    }
+                }
+
+                // Награда
+                HStack(spacing: 8) {
+                    Text("+\(rewardCoins)")
+                        .font(.system(size: 22, weight: .bold))
+                        .foregroundColor(.white)
+                    Image("money_icon")
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: 26, height: 26)
+                }
+                .padding(.top, 4)
+
+                // Кнопки
+                HStack(spacing: 40) {
+                    Button(action: onRestart) {
+                        Image("restart_button")
+                            .resizable()
+                            .aspectRatio(contentMode: .fit)
+                            .frame(width: 70, height: 45)
+                    }
+                    Button(action: onHome) {
+                        Image("home_button")
+                            .resizable()
+                            .aspectRatio(contentMode: .fit)
+                            .frame(width: 70, height: 45)
+                    }
                 }
             }
+            .padding(50)
+            .background(
+                Image("alert_panel")
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+            )
+            .frame(width: 320, height: 300)
+        }
+        .transition(.opacity)
+        .animation(.easeInOut(duration: 0.2), value: didWin)
+    }
+}
+
+struct CoinCounterView: View {
+    @ObservedObject private var playerData = PlayerData.shared
+    var body: some View {
+        HStack(spacing: 6) {
+            Image("money_icon")
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .frame(height: 24)
+            Text("\(playerData.coins)")
+                .font(.headline)
+                .foregroundColor(.white)
+                .shadow(radius: 2)
+        }
+    }
+}
+
+struct LevelCoinCounterView: View {
+    @ObservedObject var scene: GameScene
+    var body: some View {
+        HStack(spacing: 6) {
+            Image("money_icon")
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .frame(height: 18)
+            Text("+\(scene.levelCoins)")
+                .font(.subheadline)
+                .foregroundColor(.white)
+                .shadow(radius: 1)
         }
     }
 }

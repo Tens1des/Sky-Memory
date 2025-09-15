@@ -14,7 +14,9 @@ struct Skin: Identifiable {
 class PlayerData: ObservableObject {
     static let shared = PlayerData() // Singleton
     
-    @Published var coins: Int
+    @Published var coins: Int {
+        didSet { saveData() }
+    }
     @Published var purchasedSkins: [Int]
     @Published var selectedSkinID: Int
     
@@ -28,9 +30,9 @@ class PlayerData: ObservableObject {
         self.purchasedSkins = UserDefaults.standard.array(forKey: purchasedSkinsKey) as? [Int] ?? [0] // Скин 0 куплен по умолчанию
         self.selectedSkinID = UserDefaults.standard.integer(forKey: selectedSkinKey)
         
-        // Если игра запускается впервые, даем 1000 монет
+        // Если игра запускается впервые, даем 180 монет
         if UserDefaults.standard.object(forKey: coinsKey) == nil {
-            self.coins = 1000
+            self.coins = 150
         }
     }
     

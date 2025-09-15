@@ -11,8 +11,8 @@ import GameplayKit
 class GameScene: SKScene, ObservableObject {
     
     // --- Основные параметры сетки ---
-    let numColumns = 5
-    let numRows = 4
+    let numColumns = 10
+    let numRows = 7
     
     // --- Свойства для расчетов позиций ---
     private var tileSize: CGFloat = 0
@@ -23,10 +23,34 @@ class GameScene: SKScene, ObservableObject {
     private var correctPath: [(row: Int, col: Int)] = []
     private var pathSprites: [SKSpriteNode] = []
     private var currentPathIndex = 0
-    private var lives = 3
-    private var lifeNodes: [SKSpriteNode] = []
+    @Published private(set) var lives = 3
+    @Published private(set) var stars = 3 // Добавляем отслеживание звезд
+    @Published var levelCoins: Int = 150 // Базовые монеты уровня для расчёта
+    @Published var gameOver = false
+    @Published var didWin = false
     private var isGameOver = false
     private var canPlayerMove = false
+    private var playerNode: SKSpriteNode?
+    
+    // --- Ураган как живой таймер ---
+    private var tornadoNode: SKSpriteNode?
+    private var tornadoSpeed: CGFloat = 20.0 // пикс/сек стартовая скорость
+    private var tornadoAcceleration: CGFloat = 4.0 // ускорение пикс/сек^2
+    private var lastUpdateTime: TimeInterval = 0
+    
+    // Управление паузой
+    func pauseGame() {
+        self.isPaused = true
+    }
+    
+    func resumeGame() {
+        self.isPaused = false
+    }
+    
+    // --- Движение шипов и плиток ---
+    private let spikesSpeed: CGFloat = -3.0 // Очень медленная скорость для шипов
+    private var rowNodes: [SKNode] = [] // Массив для хранения рядов плиток
+    // Отдельный массив скоростей не храним; направление зададим по индексу ряда
     
     override func didMove(to view: SKView) {
         // Очищаем сцену на случай перезапуска
@@ -34,6 +58,31 @@ class GameScene: SKScene, ObservableObject {
         
         // Настраиваем сцену с нуля
         setupScene()
+        
+        // Шипы статичны — движение не запускаем
+        // startSpikesMovement()
+    }
+    
+    private func startSpikesMovement() {
+        // Создаем действия для движения
+        let duration: TimeInterval = 8.0 // Очень медленное движение - 8 секунд в одну сторону
+        let moveLeftToCenter = SKAction.moveBy(x: frame.width/5, y: 0, duration: duration)
+        let moveRightToCenter = SKAction.moveBy(x: -frame.width/5, y: 0, duration: duration)
+        let resetLeft = SKAction.moveTo(x: 0, duration: 0)
+        let resetRight = SKAction.moveTo(x: frame.maxX, duration: 0)
+        
+        // Создаем последовательности действий
+        let leftSequence = SKAction.sequence([moveLeftToCenter, resetLeft])
+        let rightSequence = SKAction.sequence([moveRightToCenter, resetRight])
+        
+        // Запускаем бесконечное повторение
+        if let leftSpike = childNode(withName: "spikesLeft") {
+            leftSpike.run(SKAction.repeatForever(leftSequence))
+        }
+        
+        if let rightSpike = childNode(withName: "spikesRight") {
+            rightSpike.run(SKAction.repeatForever(rightSequence))
+        }
     }
     
     private func setupScene() {
@@ -46,6 +95,12 @@ class GameScene: SKScene, ObservableObject {
         
         // 2. Создаем сетку
         setupGrid()
+        
+        // 2.1 Размещаем шипы слева и справа от сетки
+        setupSpikes()
+        
+        // 2.2 Размещаем ураган внизу сетки (старт таймера)
+        setupTornado()
         
         // 3. Добавляем игрока
         setupPlayer()
@@ -62,18 +117,27 @@ class GameScene: SKScene, ObservableObject {
             SKAction.wait(forDuration: 2.0),
             SKAction.run { [weak self] in
                 self?.hidePath()
+                self?.startRowsMovement() // Запускаем движение рядов после скрытия пути
+                // Шипы остаются статичными, поэтому не запускаем движение
+                // self?.startSpikesMovement()
                 self?.canPlayerMove = true
             }
         ]))
     }
     
     private func setupGrid() {
+        rowNodes.removeAll() // Очищаем массив рядов
+        
         let tileColors = [
-            "tile_red", "tile_orange", "tile_yellow", "tile_green", "tile_cyan", "tile_blue", "tile_pink"
+            "tile_red", "tile_orange", "tile_yellow", "tile_green", "tile_cyan"
         ]
         
-        let contentWidth = size.width * 0.60
-        tileSize = contentWidth / CGFloat(numColumns)
+        // Рассчитываем размер плитки так, чтобы сетка поместилась на экран
+        let contentWidth = size.width * 0.70
+        let contentHeight = size.height * 0.60
+        let tileSizeByWidth = contentWidth / CGFloat(numColumns)
+        let tileSizeByHeight = contentHeight / CGFloat(numRows)
+        tileSize = min(tileSizeByWidth, tileSizeByHeight)
         
         let gridWidth = tileSize * CGFloat(numColumns)
         let gridHeight = tileSize * CGFloat(numRows)
@@ -81,20 +145,94 @@ class GameScene: SKScene, ObservableObject {
         gridStartX = frame.midX - gridWidth / 2
         gridStartY = frame.midY - gridHeight / 2
         
-        for col in 0..<numColumns {
-            for row in 0..<numRows {
+        // Создаем ряды плиток
+        for row in 0..<numRows {
+            // Создаем контейнер для ряда
+            let rowNode = SKNode()
+            rowNode.position = CGPoint(x: gridStartX, y: gridStartY + CGFloat(row) * tileSize)
+            rowNode.zPosition = 0
+            addChild(rowNode)
+            rowNodes.append(rowNode)
+            
+            // Создаем плитки в ряду
+            for col in 0..<numColumns {
                 let tile = SKSpriteNode(imageNamed: tileColors.randomElement()!)
                 tile.size = CGSize(width: tileSize, height: tileSize)
-                
-                let x = gridStartX + CGFloat(col) * tileSize + tileSize / 2
-                let y = gridStartY + CGFloat(row) * tileSize + tileSize / 2
-                
-                tile.position = CGPoint(x: x, y: y)
-                tile.zPosition = 0
-                
-                addChild(tile)
+                tile.position = CGPoint(x: CGFloat(col) * tileSize + tileSize / 2, y: tileSize / 2)
+                rowNode.addChild(tile)
             }
         }
+        
+        // Движение рядов запустится после показа пути
+    }
+    
+    private func startRowsMovement() {
+        for (index, rowNode) in rowNodes.enumerated() {
+            // Чередуем направление движения по индексам рядов
+            let direction: CGFloat = (index % 2 == 0) ? 1 : -1
+            let moveDistance = tileSize // Расстояние в одну сторону
+            
+            // Создаем действия движения с фиксированной длительностью для большей плавности
+            let duration: TimeInterval = 4.0 // 4 секунды в одну сторону
+            let moveForward = SKAction.moveBy(x: moveDistance * direction, y: 0, duration: duration)
+            let moveBack = SKAction.moveBy(x: -moveDistance * direction, y: 0, duration: duration)
+            
+            // Создаем последовательность: движение вперед -> движение назад
+            let sequence = SKAction.sequence([moveForward, moveBack])
+            
+            // Запускаем бесконечное повторение
+            rowNode.run(SKAction.repeatForever(sequence))
+        }
+    }
+    
+    private func setupSpikes() {
+        // Располагаем шипы по краям экрана и ограничиваем их высотой сетки
+        let spikeWidth = tileSize * 3
+        let gridWidth = tileSize * CGFloat(numColumns)
+        let gridHeight = tileSize * CGFloat(numRows)
+        let spikesHeight = gridHeight
+        let spikesCenterY = gridStartY + gridHeight / 2
+        
+        // Левый шип — у левого края экрана
+        let spikesLeft = SKSpriteNode(imageNamed: "spikesL")
+        spikesLeft.name = "spikesLeft"
+        spikesLeft.size = CGSize(width: spikeWidth, height: spikesHeight)
+        spikesLeft.position = CGPoint(x: gridStartX - spikeWidth / 2, y: spikesCenterY)
+        spikesLeft.zPosition = 3
+        addChild(spikesLeft)
+        
+        // Правый шип — у правого края экрана
+        let spikesRight = SKSpriteNode(imageNamed: "spikesR")
+        spikesRight.name = "spikesRight"
+        spikesRight.size = CGSize(width: spikeWidth, height: spikesHeight)
+        spikesRight.position = CGPoint(x: gridStartX + gridWidth + spikeWidth / 2, y: spikesCenterY)
+        spikesRight.zPosition = 3
+        addChild(spikesRight)
+    }
+
+    private func setupTornado() {
+        let tornado = SKSpriteNode(imageNamed: "torndo_image")
+        tornado.name = "tornado"
+        let gridWidth = tileSize * CGFloat(numColumns)
+        tornado.size = CGSize(width: gridWidth * 1.5, height: tileSize * 3)
+        // Старт ниже экрана, по центру сетки
+        let startX = gridStartX + gridWidth / 2
+        let startY = frame.minY - tornado.size.height
+        tornado.position = CGPoint(x: startX, y: startY)
+        tornado.zPosition = 1 // над фоном, под игроком/плитками
+        addChild(tornado)
+        tornadoNode = tornado
+        
+        // Сброс параметров
+        tornadoSpeed = 0.0
+        tornadoAcceleration = 0.0
+        tornado.speed = 1.0
+
+        // Плавное постоянное поднятие снизу до верхней границы экрана (медленно)
+        let endY = frame.maxY + tornado.size.height
+        let rise = SKAction.moveTo(y: endY, duration: 30.0)
+        rise.timingMode = .linear
+        tornado.run(rise)
     }
     
     private func setupPlayer() {
@@ -105,19 +243,19 @@ class GameScene: SKScene, ObservableObject {
         player.name = "player"
         player.size = CGSize(width: tileSize * 0.7, height: tileSize * 0.5)
         
-        let playerX = gridStartX + CGFloat(2) * tileSize + tileSize / 2
+        // По центру по X и ниже сетки по Y
+        let gridWidth = tileSize * CGFloat(numColumns)
+        let playerX = gridStartX + gridWidth / 2
         let playerY = gridStartY - tileSize / 2
         
         player.position = CGPoint(x: playerX, y: playerY)
         player.zPosition = 2
         
         addChild(player)
+        self.playerNode = player
     }
     
     private func setupUI() {
-        // Убираем создание иконок здоровья
-        lifeNodes.removeAll()
-        
         // Создаем кнопку "Повторить путь"
         let repeatButton = SKSpriteNode(imageNamed: "repeat_button")
         repeatButton.name = "repeatButton"
@@ -174,8 +312,8 @@ class GameScene: SKScene, ObservableObject {
             if animated {
                 sprite.run(SKAction.fadeOut(withDuration: 0.5)) {
                     sprite.removeFromParent()
-                }
-            } else {
+            }
+        } else {
                 sprite.removeFromParent()
             }
         }
@@ -200,45 +338,90 @@ class GameScene: SKScene, ObservableObject {
             return // Выходим, чтобы не обрабатывать другие нажатия
         }
         
-        if isGameOver {
-            // Находим узел, по которому тапнули
-            // Проверяем, не является ли этот узел или его родитель кнопкой рестарта
-            if touchedNode.name == "restartButton" || touchedNode.parent?.name == "restartButton" {
-                restartGame()
-            }
-            return
-        }
+        if isGameOver { return }
+        if self.isPaused { return }
         
         guard canPlayerMove else { return }
         
-        let gridEndX = gridStartX + tileSize * CGFloat(numColumns)
-        let gridEndY = gridStartY + tileSize * CGFloat(numRows)
-        
-        guard location.x >= gridStartX && location.x < gridEndX &&
-              location.y >= gridStartY && location.y < gridEndY else { return }
-        
-        let tappedCol = Int((location.x - gridStartX) / tileSize)
-        let tappedRow = Int((location.y - gridStartY) / tileSize)
+        // Новая логика: определяем ряд/колонку с учётом текущего смещения рядов
+        guard let (tappedRow, tappedCol) = tileIndexAtScenePoint(location) else { return }
         
         let expectedMove = correctPath[currentPathIndex]
+        print("TAP DEBUG -> tapped (r: \(tappedRow), c: \(tappedCol)), expected (r: \(expectedMove.row), c: \(expectedMove.col)), idx: \(currentPathIndex)")
         
-        if tappedRow == expectedMove.row && tappedCol == expectedMove.col {
+        // Добавляем проверку условий
+        let isCorrectRow = tappedRow == expectedMove.row
+        let isCorrectCol = tappedCol == expectedMove.col
+        print("Check conditions -> correctRow: \(isCorrectRow), correctCol: \(isCorrectCol)")
+        
+        if isCorrectRow && isCorrectCol {
+            print("Correct move! Calling movePlayer...")
             movePlayer(toRow: tappedRow, toCol: tappedCol)
         } else {
+            print("Incorrect move! Row match: \(isCorrectRow), Col match: \(isCorrectCol)")
             handleIncorrectMove()
         }
     }
     
+    // Определение индекса плитки под точкой касания с учётом смещений рядов
+    private func tileIndexAtScenePoint(_ point: CGPoint) -> (row: Int, col: Int)? {
+        for (rowIndex, rowNode) in rowNodes.enumerated() {
+            // Проверяем вертикальные границы ряда
+            let rowY = gridStartY + CGFloat(rowIndex) * tileSize
+            if point.y < rowY || point.y > rowY + tileSize {
+                continue
+            }
+            
+            // Получаем смещение ряда
+            let rowOffset = rowNode.position.x - gridStartX
+            
+            // Вычисляем позицию тапа относительно начала ряда с учетом смещения
+            let relativeX = point.x - gridStartX - rowOffset
+            
+            // Проверяем горизонтальные границы
+            if relativeX < 0 || relativeX > tileSize * CGFloat(numColumns) {
+                continue
+            }
+            
+            // Определяем индекс колонки
+            let colIndex = Int(relativeX / tileSize)
+            if colIndex >= 0 && colIndex < numColumns {
+                return (row: rowIndex, col: colIndex)
+            }
+        }
+        return nil
+    }
+    
     private func movePlayer(toRow: Int, toCol: Int) {
-        guard let player = childNode(withName: "player") else { return }
+        print("Starting movePlayer with row: \(toRow), col: \(toCol)")
         
-        let targetX = gridStartX + CGFloat(toCol) * tileSize + tileSize / 2
-        let targetY = gridStartY + CGFloat(toRow) * tileSize + tileSize / 2
+        guard let player = self.playerNode else {
+            print("Error: Player node ref is nil!")
+            return
+        }
         
-        let moveAction = SKAction.move(to: CGPoint(x: targetX, y: targetY), duration: 0.2)
-        player.run(moveAction)
+        // Целевая плитка
+        let rowNode = rowNodes[toRow]
+        print("Found row node at index: \(toRow)")
+        
+        guard rowNode.children.count > toCol else {
+            print("Error: Column index \(toCol) out of bounds!")
+            return
+        }
+        
+        let tileNode = rowNode.children[toCol]
+        print("Found tile node at column: \(toCol)")
+        
+        // Отсоединяем игрока от текущего родителя и прикрепляем к целевой плитке
+        print("Current player parent: \(player.parent?.name ?? "none")")
+        player.removeFromParent()
+        tileNode.addChild(player)
+        player.position = .zero
+        player.zPosition = 10
+        print("Player attached to new tile, position: \(player.position), zPosition: \(player.zPosition)")
         
         currentPathIndex += 1
+        print("Current path index: \(currentPathIndex)/\(correctPath.count)")
         
         if currentPathIndex >= correctPath.count {
             winGame()
@@ -247,95 +430,101 @@ class GameScene: SKScene, ObservableObject {
     
     private func handleIncorrectMove() {
         lives -= 1
-            //updateLivesUI()
+        stars = lives // Обновляем звезды вместе с жизнями
+        // Штраф за потерю звезды: -50 монет из монет уровня (не ниже нуля)
+        levelCoins = max(0, levelCoins - 50)
+        // Ураган сокращает дистанцию: рывок вперед на пол-плитки и рост скорости
+        if let tornado = tornadoNode {
+            tornado.position.y += tileSize * 0.5
+            tornadoSpeed *= 1.15
+        }
+        updateLivesUI()
         
         if lives <= 0 {
             loseGame()
-            } else {
+        } else {
             let shake = SKAction.moveBy(x: 10, y: 0, duration: 0.05)
             self.run(SKAction.repeat(SKAction.sequence([shake, shake.reversed(), shake.reversed(), shake]), count: 2))
         }
     }
     
-    /* private func updateLivesUI() {
-        print("Updating lives UI. Current lives: \(lives)")
-        for (index, heart) in lifeNodes.enumerated() {
-            if index < lives {
-                heart.texture = SKTexture(imageNamed: "fillHeart_icon")
-            } else {
-                heart.texture = SKTexture(imageNamed: "notFill_icon")
-            }
-        }
-    }*/
+    private func updateLivesUI() {
+        // Обновление жизней теперь происходит через @Published свойство
+        // и автоматически отображается в SwiftUI
+    }
     
     private func winGame() {
         isGameOver = true
-        print("YOU WIN!")
-        createSimpleAlert(title: "YOU WIN!", color: .blue)
+        gameOver = true
+        didWin = true
+        self.isPaused = true
+        // Награда за победу: добавляем монеты уровня к общему балансу
+        PlayerData.shared.coins += levelCoins
+        print("YOU WIN! +\(levelCoins) coins. Total: \(PlayerData.shared.coins)")
     }
     
     private func loseGame() {
         isGameOver = true
-        print("YOU LOSE!")
-        createSimpleAlert(title: "YOU LOSE!", color: .red)
+        gameOver = true
+        didWin = false
+        self.isPaused = true
+        // Награда за поражение — 0
+        print("YOU LOSE! +0 coins. Total: \(PlayerData.shared.coins)")
     }
     
-    private func createSimpleAlert(title: String, color: SKColor) {
-        // --- Контейнер для всего алерта ---
-        let alertNode = SKNode()
-        alertNode.zPosition = 1000 // Очень высокий z-index, чтобы быть поверх всего
+    // Алерт перенесён в SwiftUI-оверлей в ContentView
+    
+    func restartGame() {
+        // Сбрасываем состояние текущей сцены (не создавая новую), чтобы SwiftUI-привязки сохранились
+        self.isPaused = false
+        removeAllActions()
+        removeAllChildren()
         
-        // Полупрозрачный фон
-        let overlay = SKShapeNode(rectOf: frame.size)
-        overlay.fillColor = .black
-        overlay.alpha = 0.7
-        overlay.position = CGPoint(x: frame.midX, y: frame.midY)
-        alertNode.addChild(overlay)
-        
-        // --- Панель (родительский узел для элементов) ---
-        let panel = SKShapeNode(rectOf: CGSize(width: 300, height: 220), cornerRadius: 15)
-        panel.fillColor = color
-        panel.strokeColor = .white
-        panel.lineWidth = 3
-        panel.position = CGPoint(x: frame.midX, y: frame.midY)
-        alertNode.addChild(panel)
-        
-        // --- Элементы (добавляем как дочерние к панели) ---
-        
-        // Текст (позиция относительно центра панели)
-        let titleLabel = SKLabelNode(text: title)
-        titleLabel.fontSize = 32
-        titleLabel.fontColor = .white
-        titleLabel.position = CGPoint(x: 0, y: 50) // Центрируем по X, смещаем по Y
-        panel.addChild(titleLabel)
-        
-        // Кнопка (позиция относительно центра панели)
-        let button = SKShapeNode(rectOf: CGSize(width: 150, height: 50), cornerRadius: 10)
-        button.fillColor = .white
-        button.strokeColor = .black
-        button.lineWidth = 2
-        button.position = CGPoint(x: 0, y: -40) // Центрируем по X, смещаем по Y
-        button.name = "restartButton"
-        panel.addChild(button)
-        
-        // Текст на кнопке
-        let buttonLabel = SKLabelNode(text: "RESTART")
-        buttonLabel.fontSize = 20
-        buttonLabel.fontColor = .black
-        buttonLabel.position = CGPoint(x: 0, y: -8) // Центрируем в кнопке
-        button.addChild(buttonLabel)
-        
-        // Добавляем весь алерт на сцену одним узлом
-        addChild(alertNode)
-        
-        print("Alert created with title: \(title)")
+        // Сброс игровых флагов и данных
+        gameOver = false
+        didWin = false
+        isGameOver = false
+        canPlayerMove = false
+        currentPathIndex = 0
+        correctPath.removeAll()
+        pathSprites.removeAll()
+        rowNodes.removeAll()
+        playerNode = nil
+        tornadoNode = nil
+
+        // Жизни/звезды по умолчанию
+        lives = 3
+        stars = 3
+        levelCoins = 150
+
+        // Инициализируем сцену заново
+        setupScene()
     }
     
-    private func restartGame() {
-        if let view = self.view {
-            let newScene = GameScene(size: self.size)
-            newScene.scaleMode = self.scaleMode
-            view.presentScene(newScene)
+    override func update(_ currentTime: TimeInterval) {
+        var dt: CGFloat = 0
+        if lastUpdateTime == 0 {
+            lastUpdateTime = currentTime
+        } else {
+            dt = CGFloat(currentTime - lastUpdateTime)
+            lastUpdateTime = currentTime
+        }
+        
+        if isGameOver || self.isPaused || !canPlayerMove { return }
+        guard let tornado = tornadoNode else { return }
+        
+        // Движение урагана вверх с ускорением
+        tornado.position.y += tornadoSpeed * dt
+        tornadoSpeed += tornadoAcceleration * dt
+        
+        // Проверка столкновения с игроком
+        if let player = playerNode {
+            // Переводим позицию игрока в координаты сцены
+            let playerInScene = player.parent?.convert(player.position, to: self) ?? player.position
+            let catchLineY = playerInScene.y - (player.size.height * 0.4)
+            if tornado.position.y >= catchLineY {
+                loseGame()
+            }
         }
     }
 }

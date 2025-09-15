@@ -17,7 +17,11 @@ struct TutorialView: View {
     var body: some View {
         Group {
             if showGameScene {
-                GameSceneView(scene: GameScene())
+                // При нажатии Home закрываем TutorialView полностью, а не возвращаемся к сцене
+                GameSceneView(scene: GameScene(), onHome: {
+                    // Единое событие открытия главного меню
+                    NotificationCenter.default.post(name: Notification.Name("OpenMainMenu"), object: nil)
+                })
             } else {
                 ZStack {
                     // Фоновое изображение
