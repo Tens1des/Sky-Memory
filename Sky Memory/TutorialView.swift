@@ -18,7 +18,7 @@ struct TutorialView: View {
         Group {
             if showGameScene {
                 // При нажатии Home закрываем TutorialView полностью, а не возвращаемся к сцене
-                GameSceneView(scene: GameScene(), onHome: {
+                GameSceneView(scene: GameScene(size: UIScreen.main.bounds.size, level: 0), onHome: {
                     // Единое событие открытия главного меню
                     NotificationCenter.default.post(name: Notification.Name("OpenMainMenu"), object: nil)
                 })

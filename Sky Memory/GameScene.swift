@@ -11,8 +11,32 @@ import GameplayKit
 class GameScene: SKScene, ObservableObject {
     
     // --- Основные параметры сетки ---
-    let numColumns = 10
-    let numRows = 7
+    var numColumns = 10
+    var numRows = 7
+    private var levelIndex: Int = 0
+
+    // Инициализация уровня с параметром level: 0 → базовая сетка, 1 → +1 столбик
+    convenience init(size: CGSize, level: Int) {
+        self.init(size: size)
+        self.levelIndex = level
+        configureGridForLevel()
+    }
+
+    override init(size: CGSize) {
+        super.init(size: size)
+        configureGridForLevel()
+    }
+
+    required init?(coder aDecoder: NSCoder) {
+        super.init(coder: aDecoder)
+        configureGridForLevel()
+    }
+
+    private func configureGridForLevel() {
+        // База: 10 столбцов, 7 рядов. Для уровня 2 (index >= 1) добавляем +1 плитку в каждом столбике
+        numColumns = 10
+        numRows = 7 + (levelIndex >= 1 ? 1 : 0)
+    }
     
     // --- Свойства для расчетов позиций ---
     private var tileSize: CGFloat = 0
@@ -31,6 +55,7 @@ class GameScene: SKScene, ObservableObject {
     private var isGameOver = false
     private var canPlayerMove = false
     private var playerNode: SKSpriteNode?
+    private var greyPlatformNode: SKSpriteNode?
     
     // --- Ураган как живой таймер ---
     private var tornadoNode: SKSpriteNode?
@@ -132,18 +157,20 @@ class GameScene: SKScene, ObservableObject {
             "tile_red", "tile_orange", "tile_yellow", "tile_green", "tile_cyan"
         ]
         
-        // Рассчитываем размер плитки так, чтобы сетка поместилась на экран
-        let contentWidth = size.width * 0.70
-        let contentHeight = size.height * 0.60
+        // Делам поле уже и выше, как на референсе: больше вертикали, меньше ширины
+        let contentWidth = size.width * 0.7
+        let contentHeight = size.height * 0.6
         let tileSizeByWidth = contentWidth / CGFloat(numColumns)
         let tileSizeByHeight = contentHeight / CGFloat(numRows)
+        // Используем минимальный размер для сохранения пропорций тайлов
         tileSize = min(tileSizeByWidth, tileSizeByHeight)
         
-        let gridWidth = tileSize * CGFloat(numColumns)
-        let gridHeight = tileSize * CGFloat(numRows)
+        // Пересчитываем размеры сетки с учетом фиксированного размера тайла
+        let actualGridWidth = tileSize * CGFloat(numColumns)
+        let actualGridHeight = tileSize * CGFloat(numRows)
         
-        gridStartX = frame.midX - gridWidth / 2
-        gridStartY = frame.midY - gridHeight / 2
+        gridStartX = frame.midX - actualGridWidth / 2
+        gridStartY = frame.midY - actualGridHeight / 2
         
         // Создаем ряды плиток
         for row in 0..<numRows {
@@ -164,6 +191,15 @@ class GameScene: SKScene, ObservableObject {
         }
         
         // Движение рядов запустится после показа пути
+        
+        // Серая панель под сеткой (чуть выше, чтобы визуально казалось массивнее)
+        let panelHeight = tileSize * 1.1
+        let panel = SKSpriteNode(imageNamed: "grey_panel")
+        panel.size = CGSize(width: actualGridWidth, height: panelHeight)
+        panel.position = CGPoint(x: gridStartX + actualGridWidth / 2, y: gridStartY - panelHeight / 2)
+        panel.zPosition = 1
+        addChild(panel)
+        greyPlatformNode = panel
     }
     
     private func startRowsMovement() {
@@ -188,10 +224,10 @@ class GameScene: SKScene, ObservableObject {
     private func setupSpikes() {
         // Располагаем шипы по краям экрана и ограничиваем их высотой сетки
         let spikeWidth = tileSize * 3
-        let gridWidth = tileSize * CGFloat(numColumns)
-        let gridHeight = tileSize * CGFloat(numRows)
-        let spikesHeight = gridHeight
-        let spikesCenterY = gridStartY + gridHeight / 2
+        let actualGridWidth = tileSize * CGFloat(numColumns)
+        let actualGridHeight = tileSize * CGFloat(numRows)
+        let spikesHeight = actualGridHeight
+        let spikesCenterY = gridStartY + actualGridHeight / 2
         
         // Левый шип — у левого края экрана
         let spikesLeft = SKSpriteNode(imageNamed: "spikesL")
@@ -205,7 +241,7 @@ class GameScene: SKScene, ObservableObject {
         let spikesRight = SKSpriteNode(imageNamed: "spikesR")
         spikesRight.name = "spikesRight"
         spikesRight.size = CGSize(width: spikeWidth, height: spikesHeight)
-        spikesRight.position = CGPoint(x: gridStartX + gridWidth + spikeWidth / 2, y: spikesCenterY)
+        spikesRight.position = CGPoint(x: gridStartX + actualGridWidth + spikeWidth / 2, y: spikesCenterY)
         spikesRight.zPosition = 3
         addChild(spikesRight)
     }
@@ -213,10 +249,10 @@ class GameScene: SKScene, ObservableObject {
     private func setupTornado() {
         let tornado = SKSpriteNode(imageNamed: "torndo_image")
         tornado.name = "tornado"
-        let gridWidth = tileSize * CGFloat(numColumns)
-        tornado.size = CGSize(width: gridWidth * 1.5, height: tileSize * 3)
+        let actualGridWidth = tileSize * CGFloat(numColumns)
+        tornado.size = CGSize(width: actualGridWidth * 1.5, height: tileSize * 3)
         // Старт ниже экрана, по центру сетки
-        let startX = gridStartX + gridWidth / 2
+        let startX = gridStartX + actualGridWidth / 2
         let startY = frame.minY - tornado.size.height
         tornado.position = CGPoint(x: startX, y: startY)
         tornado.zPosition = 1 // над фоном, под игроком/плитками
@@ -243,27 +279,21 @@ class GameScene: SKScene, ObservableObject {
         player.name = "player"
         player.size = CGSize(width: tileSize * 0.7, height: tileSize * 0.5)
         
-        // По центру по X и ниже сетки по Y
-        let gridWidth = tileSize * CGFloat(numColumns)
-        let playerX = gridStartX + gridWidth / 2
-        let playerY = gridStartY - tileSize / 2
+        // Спавн на серой панели под сеткой
+        let actualGridWidth = tileSize * CGFloat(numColumns)
+        let playerX = gridStartX + actualGridWidth / 2
+        let panelY = greyPlatformNode?.position.y ?? (gridStartY - tileSize / 2)
+        let playerY = panelY
         
         player.position = CGPoint(x: playerX, y: playerY)
-        player.zPosition = 2
+        player.zPosition = 3
         
         addChild(player)
         self.playerNode = player
     }
     
     private func setupUI() {
-        // Создаем кнопку "Повторить путь"
-        let repeatButton = SKSpriteNode(imageNamed: "repeat_button")
-        repeatButton.name = "repeatButton"
-        repeatButton.size = CGSize(width: 50, height: 50)
-        // Позиционируем в левом верхнем углу
-        repeatButton.position = CGPoint(x: frame.minX + 45, y: frame.maxY - 60)
-        repeatButton.zPosition = 10
-        addChild(repeatButton)
+        // Кнопки интерфейса создаются в SwiftUI. Здесь ничего не добавляем.
     }
     
     private func generatePath() {
@@ -326,18 +356,6 @@ class GameScene: SKScene, ObservableObject {
         
         let touchedNode = atPoint(location)
         
-        // --- Обработка кнопки "Повторить путь" ---
-        if touchedNode.name == "repeatButton" {
-            showPath()
-            run(SKAction.sequence([
-                SKAction.wait(forDuration: 2.0),
-                SKAction.run { [weak self] in
-                    self?.hidePath()
-                }
-            ]))
-            return // Выходим, чтобы не обрабатывать другие нажатия
-        }
-        
         if isGameOver { return }
         if self.isPaused { return }
         
@@ -361,6 +379,17 @@ class GameScene: SKScene, ObservableObject {
             print("Incorrect move! Row match: \(isCorrectRow), Col match: \(isCorrectCol)")
             handleIncorrectMove()
         }
+    }
+
+    // Публичный метод для повторного показа пути (для кнопки в SwiftUI)
+    func repeatPath() {
+        showPath()
+        run(SKAction.sequence([
+            SKAction.wait(forDuration: 2.0),
+            SKAction.run { [weak self] in
+                self?.hidePath()
+            }
+        ]))
     }
     
     // Определение индекса плитки под точкой касания с учётом смещений рядов
@@ -442,7 +471,7 @@ class GameScene: SKScene, ObservableObject {
         
         if lives <= 0 {
             loseGame()
-        } else {
+            } else {
             let shake = SKAction.moveBy(x: 10, y: 0, duration: 0.05)
             self.run(SKAction.repeat(SKAction.sequence([shake, shake.reversed(), shake.reversed(), shake]), count: 2))
         }

@@ -74,6 +74,14 @@ struct ContentView: View {
                 showGameScene = false
                 gameScene = nil
             }
+            // Подписка на запуск уровней с главного меню
+            NotificationCenter.default.addObserver(forName: Notification.Name("StartLevel"), object: nil, queue: .main) { note in
+                if let number = note.object as? Int {
+                    // Убираем туториал: любой выбранный уровень запускает игру
+                    let levelIndex = (number == 2) ? 1 : 0
+                    startGame(level: levelIndex)
+                }
+            }
         }
         .onDisappear {
             if let observer = notificationObserver {
@@ -84,10 +92,11 @@ struct ContentView: View {
     }
     
     private func startGame(level: Int) {
-      //  let scene = GameScene(size: UIScreen.main.bounds.size, level: level)
-        //scene.scaleMode = .aspectFill
-      // gameScene = scene
         selectedLevel = level
+        let scene = GameScene(size: UIScreen.main.bounds.size, level: level)
+        scene.scaleMode = .aspectFill
+        gameScene = scene
+        showGameScene = true
     }
 }
 
@@ -121,9 +130,9 @@ struct GameSceneView: View {
                                 .frame(width: 44, height: 44)
                         }
                         
-                        // Кнопка повтора
+                        // Кнопка повтора (SwiftUI вызывает метод сцены)
                         Button(action: {
-                            print("Кнопка повтора нажата")
+                            scene.repeatPath()
                         }) {
                             Image("repeat_button")
                                 .resizable()
@@ -136,27 +145,41 @@ struct GameSceneView: View {
                     
                     Spacer().frame(width: 15)
                     
-                    // Индикаторы жизней по центру
-                    HStack(spacing: 8) {
-                        ForEach(0..<3) { index in
-                            Image(index < scene.lives ? "fillHeart_icon" : "notFill_icon")
-                                .resizable()
-                                .aspectRatio(contentMode: .fit)
-                                .frame(width: 30, height: 30)
-                        }
-                    }
-                    
-                    // Звезды и монеты за уровень справа (счетчик под звездами)
-                    VStack(alignment: .trailing, spacing: 4) {
+                    // Индикаторы жизней на панели hp_panel (увеличиваем высоту)
+                    ZStack {
+                        Image("hp_panel")
+                            .resizable()
+                            .aspectRatio(contentMode: .fit)
+                            .frame(height: 80)
                         HStack(spacing: 8) {
                             ForEach(0..<3) { index in
-                                Image(index < scene.stars ? "fillStar_icon" : "notFillStar_icon")
+                                Image(index < scene.lives ? "fillHeart_icon" : "notFill_icon")
                                     .resizable()
                                     .aspectRatio(contentMode: .fit)
-                                    .frame(width: 30, height: 30)
+                                    .frame(width: 44, height: 44)
                             }
                         }
-                        LevelCoinCounterView(scene: scene)
+                        .padding(.horizontal, 12)
+                    }
+                    
+                    // Панель для звезд и монет (увеличиваем высоту)
+                    ZStack {
+                        Image("panelStar_image")
+                            .resizable()
+                            .aspectRatio(contentMode: .fit)
+                            .frame(height: 76)
+                        VStack(alignment: .trailing, spacing: 2) {
+                            HStack(spacing: 6) {
+                                ForEach(0..<3) { index in
+                                    Image(index < scene.stars ? "fillStar_icon" : "notFillStar_icon")
+                                        .resizable()
+                                        .aspectRatio(contentMode: .fit)
+                                        .frame(width: 26, height: 26)
+                                }
+                            }
+                            LevelCoinCounterView(scene: scene)
+                        }
+                        .padding(.horizontal, 14)
                     }
                     .padding(.trailing, 16)
                 }

@@ -89,6 +89,7 @@ struct MainMenuView: View {
                             LevelButton(level: level, action: {
                                 // Действие при выборе уровня
                                 print("Выбран уровень \(level.number)")
+                                NotificationCenter.default.post(name: Notification.Name("StartLevel"), object: level.number)
                             }, showTutorial: $showTutorial)
                         }
                     }
@@ -251,14 +252,8 @@ struct LevelButton: View {
     
     var body: some View {
         Group {
-            if level.number == 1 {
-                NavigationLink(destination: TutorialView()) {
-                    levelContent
-                }
-            } else {
-                Button(action: action) {
-                    levelContent
-                }
+            Button(action: action) {
+                levelContent
             }
         }
     }
