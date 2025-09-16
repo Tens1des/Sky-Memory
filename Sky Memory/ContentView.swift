@@ -247,7 +247,7 @@ struct PauseAlert: View {
                     }
                     
                     // Слайдер звука
-                    HStack(spacing: 8) {
+                    VStack(spacing: 15) {
                         Image("sound_label")
                             .resizable()
                             .aspectRatio(contentMode: .fit)

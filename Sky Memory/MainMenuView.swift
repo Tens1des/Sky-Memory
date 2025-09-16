@@ -104,10 +104,10 @@ struct MainMenuView: View {
                         Image("shop_button")
                             .resizable()
                             .aspectRatio(contentMode: .fit)
-                            .frame(width: 110, height: 60)
+                            .frame(width: 70, height: 60)
                     }
                     .padding(.leading, 280)
-                    .padding(.bottom, 20)
+                    .padding(.bottom, 60)
                     
                     Spacer()
                 }
@@ -187,12 +187,13 @@ struct SettingsAlert: View {
                 }
             
             // Синяя панель настроек
-            VStack(spacing: 20) {
+            VStack(spacing: 10) {
                 // Заголовок SETTINGS
                 Image("settings_label")
                     .resizable()
                     .aspectRatio(contentMode: .fit)
                     .frame(height: 20)
+                    .padding(.top, 14)
                 
                 // Слайдер музыки
                 HStack(spacing: 15) {
@@ -227,7 +228,7 @@ struct SettingsAlert: View {
                         .aspectRatio(contentMode: .fit)
                         .frame(width: 40, height: 40)
                 }
-                .padding(.top, 10)
+                .padding(.top, 20)
             }
             .background(
                 Image("blue_panel")
@@ -235,7 +236,7 @@ struct SettingsAlert: View {
                     .aspectRatio(contentMode: .fill)
                 
             )
-            .frame(width: 350, height: 250)
+            .frame(width: 350, height: 350)
             //.cornerRadius(20)
             .scaleEffect(isPresented ? 1.0 : 0.8)
             .opacity(isPresented ? 1.0 : 0.0)
